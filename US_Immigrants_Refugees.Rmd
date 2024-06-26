@@ -1,0 +1,509 @@
+---
+title: "United States Immigrants and Refugees from 2012-2019"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    theme: yeti
+    orientation: columns
+    vertical_layout: scroll
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(flexdashboard)
+library(viridis)
+library(ggmap)
+library(maps)
+library(plotly)
+library(RColorBrewer)
+library(tidyverse)
+
+full_data <- read_csv("Immigrant_full_data.csv")
+
+#Call in Plotly country codes to make choropleth maps
+plotlyworld <- read.csv("https://raw.githubusercontent.com/plotly/datasets/master/2014_world_gdp_with_codes.csv") %>%
+  select(-GDP..BILLIONS.) %>%
+  mutate(country = as.character(COUNTRY)) %>%
+  select(-COUNTRY)
+
+# change names of countries
+plotlyworld <- plotlyworld %>%
+  mutate(country = ifelse(country == "Bahamas, The", "Bahamas", country),
+         country = ifelse(country == "China", "China (excl. Hong Kong and Taiwan)", country),
+         country = ifelse(country == "Congo, Democratic Republic of the", "Democratic Republic of Congo", country),
+         country = ifelse(country == "Congo, Republic of the", "Republic of Congo", country),
+         country = ifelse(country == "Gambia, The", "Gambia", country),
+         country = ifelse(country == "Korea, North", "North Korea", country),
+         country = ifelse(country == "Korea, South", "South Korea", country),
+         country = ifelse(country == "Micronesia, Federated States of", "Micronesia, Federated States", country),
+         country = ifelse(country == "Moldova", "Republic of Moldova", country),
+         country = ifelse(country == "Czech Republic", "Czechia", country),
+         country = ifelse(country == "Swaziland", "Eswatini (formerly Swaziland)", country),
+         country = ifelse(country == "Virgin Islands", "U.S. Virgin Islands", country))
+
+mapdata <- full_data %>%
+  select(country_of_origin, newly_arrived_immigrants_by_cnt_reg_cntry, gdp_per_capita_2017, freedom_total, total_refugees_by_country, year) %>%
+  left_join(plotlyworld, by = c("country_of_origin" = "country")) %>%
+  dplyr::mutate(year = as.character(year))
+
+# Creating the hover text
+mapdata$hover <- with(mapdata, paste(year, country_of_origin, '<br>', "Newly Arrived Immigrants:", newly_arrived_immigrants_by_cnt_reg_cntry, '<br>', "Refugees:", total_refugees_by_country, '<br>', "Fredom House Score:", freedom_total, '<br>', "GDP per capita:", gdp_per_capita_2017))
+```
+
+About
+==========================
+By Noah Elbaor and Dhesel Khando
+
+### Background
+Since its founding, the United States has attracted millions of people from across the world seeking a fresh start. These immigrants and refugees pursuing the American dream have played a pivotal role in building the United States we know today and will continue to shape its story well into the future. Yet for as long as newcomers have arrived on American shores, so too has criticism followed. In the wake of the recent Taliban takeover of Afghanistan and the rush of Afghan refugees to our doorstep, these discussions have been pushed to the forefront. Unfortunately, the political debates on the merits and dangers of bringing new arrivals often lack the proper context of who is seeking to become American and why. 
+
+This project offers an objective look into where recent US immigrants and refugees are coming from and offers insights into the complicated geopolitical contexts surrounding migration. Far from comprehensive, this project seeks to provide perspective on American immigrants and refugee seekers, spark curiosity, and ultimately inform the development of sustainable policy solutions.
+
+### Definitions
+Freedom House Score: Freedom House is a non-for-profit organization that uses a variety of political and socioeconomic factors to create categorical composite scores from 0-100, that rate how "free" a given country is. Our analyses use the aggregate score with 100 being most free, 0 being least free. Free countries generally involve greater citizen participation in politics, offer greater freedom of political and social expression, and greater respect for human rights.
+For more see [Freedom House](https://freedomhouse.org/report/freedom-world).
+
+GDP per capita: Gross Domestic Product (GDP) is a measure of a given country's economic output, i.e. the total value of all final goods and services produced within a country's borders. GDP per capita divides that number by the country's population. The resulting measure is an imperfect, average estimate of each individual citizen's economic output. GDP per capita is often used to measure a given country's level of economic development. 
+For more see [Investopedia](https://www.investopedia.com/terms/p/per-capita-gdp.asp_).
+
+### Sources
+1. [Migration Policy Institute](https://www.migrationpolicy.org/programs/data-hub/us-immigration-trends): Legal Immigrants by Country of Origin, Number and Share of Total US Population, and Refugee Admissions data sets
+2. [Refugee Processing Center](https://www.wrapsnet.org/): Refugee religious identities
+3. [Our World In Data](https://ourworldindata.org/grapher/gdp-per-capita-worldbank): GDP per capita in constant 2017 international $
+4. [Freedom House](https://freedomhouse.org/report/freedom-world): Aggregate Category and Subcategory Scores (total)
+
+All data sourced was from 2012-2019
+
+### Notable Difficulties
+The first challenge encountered was the difficulty of joining 5 different data sets by country name, because each data set named countries differently. We used `anti_join` to find the names that differed and then individually rename the country names. Next time, using a function will help automate the process and make it much more efficient. 
+
+The second challenge was successfully scarping our [refugees religion](https://www.wrapsnet.org/documents/Refugee%20Arrivals%20by%20Nationality%20and%20Religion%20Group%20and%20Religion%20FY2012%20to%20FY2021.pdf) data set. Because it was a pdf, we ended up scarping it using adobe acrobat. The scrape, however, did not function according to plan and some values spilled over into the wrong columns. We then decided to split the scared data into two data sets. We filtered out the erroneous data in the second data set and then joined the now two clean data sets together. If you're curious, our process can be found starting at line 135 in our "Data Wrangling Central.Rmd" located in the "Wrangling" folder, in the "Noah and Dhesel" folder.
+
+Another difficulty came in properly formatting our map. We knew we wanted to have multiple variables displayed user hovers over each country but initially did not how know to accomplish this. Additionally, when using both geom_map and geom_polygon, some countries were not responding to the hover. Thus we turned to plot_ly which allowed us to easily input exactly what we wanted in our hover boxes and also solved the problem of not having all countries respond to our hover. 
+
+Lastly, although this project is limited in scope, that are many other data sets that exist to further break down the demographics of US immigrants and refugees, including by education and employment levels, age and gender. We have only scraped the tip of the iceberg and hope that our project inspires further analyses. 
+
+Immigrants
+==========================
+
+Column {data-width=950}
+-----------------------------------------------------------------------
+
+#### How Many immigrants live in the United States?
+```{r}
+options(scipen = 999)
+
+inputPanel(
+  selectInput("total_share", label = "Share vs. Total",
+              choices = c("Total", "Share"),
+              selected = "Total")
+)
+renderPlot({
+    if (input$total_share == "Total")
+  full_data %>%
+  ggplot(aes(x = as.numeric(year), y = annual_total_US_immigrant_pop)) +
+  geom_point() +
+  geom_smooth(aes(color = president), method = "lm") +
+  theme_minimal() +
+  labs(title = "Total Immigrants Living in the United States",
+       x = "Year",
+       y = "Total Number of Immigrants") +
+  theme(plot.title = element_text(family = "Times"),
+  axis.title.y = element_text(family = "Times"),
+  axis.title.x = element_text(family = "Times")) +
+  scale_y_continuous(breaks = c(40000000, 41000000, 42000000, 43000000, 44000000, 45000000), labels = scales::comma)
+  
+else if (input$total_share == "Share")
+full_data %>%
+  ggplot(aes(x = as.numeric(year), y = annual_total_immigrants_as_percent_of_US_pop)) +
+  geom_point() +
+  geom_smooth(aes(color = president), method = "lm") +
+  theme_minimal() +
+  labs(title = "Total Immigrants Living in the United States",
+       subtitle = "As Share of US Population",
+       x = "Year",
+       y = "Percent of US Population ") +
+  theme(plot.title = element_text(family = "Times"),
+  axis.title.y = element_text(family = "Times"),
+  axis.title.x = element_text(family = "Times"),
+  plot.subtitle = element_text(family = "Times"))
+  
+})
+```
+The total number of immigrants in the United States has been steadily increasing from 2012-2019, across both the Obama and Trump presidential administrations, with an increase of nearly 5 million in the time period.
+
+#### Where are US immigrants coming from?
+
+```{r} 
+inputPanel(
+  selectInput("overlay", label = "Map Overlay",
+              choices = c("Newly Arrived Immigrants" = "newly_arrived_immigrants_by_cnt_reg_cntry",
+                          "Freedom House" = "freedom_total",
+                          "GDP per capita" = "gdp_per_capita_2017"),
+              selected = "Newly Arrived Immigrants"
+),
+ selectInput("year_filter", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012)
+)
+
+renderPlotly({
+  
+map1data <- mapdata %>%
+  filter(year == input$year_filter,
+         country_of_origin != "United States")
+
+if (input$overlay == "newly_arrived_immigrants_by_cnt_reg_cntry") {
+map1data %>%
+    plot_ly(type = 'choropleth', locations = map1data$CODE, z = map1data$newly_arrived_immigrants_by_cnt_reg_cntry,
+        text = ~hover, colorscale = "Viridis", reversescale = T) %>%
+  colorbar(title = "Number of Immigrants") %>%
+  layout(
+    title = 'Newly Legalized US Immigrants by Country of Origin'
+  )
+} else if(input$overlay == "freedom_total") {
+map1data %>%
+    plot_ly(type = 'choropleth', locations = map1data$CODE, z = map1data$freedom_total,
+        text = ~hover, colorscale = "Viridis", reversescale = T) %>%
+  colorbar(title = "Freedom House Score by Country") %>%
+  layout(
+    title = 'Freedom House Score')
+} else if(input$overlay == "gdp_per_capita_2017") {
+map1data %>%
+    plot_ly(type = 'choropleth', locations = map1data$CODE, z = map1data$gdp_per_capita_2017,
+        text = ~hover, colorscale = "Viridis", reversescale = T) %>%
+  colorbar(title = "GDP per capita by Country,") %>%
+  layout(
+    title = '2017 GDP per capita')
+}
+})
+```
+The vast majority of US immigrants for all years come from either Mexico, China, and India. Comparing the different overlays, we can see that the countries with the highest numbers of immigrants visually correlate with countries that have mid level freedom scores and GDP per capitas, from around the 20-40 and 10000-20000 ranges respectively. The freest and richest countries see the littlest immigration to the US.
+
+#### Top Countries of Origin for Immigrants
+
+```{r}
+inputPanel(
+ selectInput("year_filter2", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012)
+)
+
+renderPlot({
+ full_data %>%
+  dplyr::filter(year == input$year_filter2,
+                !is.na(country_of_origin)) %>%
+  summarise(newly_arrived_immigrants_by_cnt_reg_cntry, country_of_origin) %>%
+  arrange(desc(newly_arrived_immigrants_by_cnt_reg_cntry)) %>%
+  distinct() %>%
+  slice_head(n = 5) %>%
+    ggplot()+
+    geom_bar(mapping = aes(x =fct_reorder(country_of_origin,newly_arrived_immigrants_by_cnt_reg_cntry), y = newly_arrived_immigrants_by_cnt_reg_cntry),stat = "identity", fill = "aquamarine2")+
+    labs( x = "Country of origin", y = "Number of Newly Arrived immigrants")+
+    theme_minimal() +
+    labs(title = "Top 5 Countries of Origin for Immigrants", x = "Country of origin", y = "Newly Arrived immigrants")+
+    theme_minimal() +
+    theme(plot.title = element_text(family = "Times"),
+          axis.title.y = element_text(family = "Times"),
+          axis.title.x = element_text(family = "Times"),
+          plot.subtitle = element_text(family = "Times")) + 
+    scale_y_continuous(labels = scales::comma)
+  
+    
+})
+
+
+```
+Consistent with our spatial analysis, most immigrants come form India, China, or Mexico. There was, however, a large influx of Cuban immigrants form 2016-2018.
+
+#### What kind of countries are immigrants coming from?
+
+```{r}
+inputPanel(
+  selectInput("imm_kind_year", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012),
+  selectInput("freedom_gdp", label = "Freedom House vs. GDP per capita",
+             choices = c("Freedom House" = "freedom_total",
+                         "GDP per capita" = "gdp_per_capita_2017"),
+             selected =  "Freedom House")
+)
+
+renderPlot({
+if (input$freedom_gdp == "freedom_total")
+  full_data %>%
+    filter(year == input$imm_kind_year,
+         newly_arrived_immigrants_by_cnt_reg_cntry < 5000) %>%
+    ggplot(aes(x = freedom_total, y = newly_arrived_immigrants_by_cnt_reg_cntry)) +
+    geom_point() +
+    geom_smooth(method = "lm", se = FALSE) +
+    theme_minimal() +
+    labs(title = "Newly Arrived Immigrants by Country Freedom House Score",
+         subtitle = "Outliers Removed",
+       x = "Freedom House Score",
+       y = "Number of Newly Arrived Immigrants") +
+    theme(plot.title = element_text(family = "Times"),
+          axis.title.y = element_text(family = "Times"),
+          axis.title.x = element_text(family = "Times"),
+          plot.subtitle = element_text(family = "Times"))  + 
+    scale_y_continuous(labels = scales::comma)
+  
+else if (input$freedom_gdp == "gdp_per_capita_2017")
+  full_data %>%
+  filter(year == input$imm_kind_year,
+         newly_arrived_immigrants_by_cnt_reg_cntry < 20000) %>%
+  ggplot(aes(x = gdp_per_capita_2017, y = newly_arrived_immigrants_by_cnt_reg_cntry)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+  scale_y_continuous(limits = c(0, 75000)) +
+  labs(title = "Newly Arrived Immigrants by GDP per capita",
+       subtitle = "Outliers Removed",
+       x = "GDP per capita (constant 2017 international $",
+       y = "Number of Newly Arrived Immigrants") +
+  theme(plot.title = element_text(family = "Times"),
+  axis.title.y = element_text(family = "Times"),
+  axis.title.x = element_text(family = "Times"),
+  plot.subtitle = element_text(family = "Times")) +
+    scale_y_continuous(labels = scales::comma)
+})
+```
+Again consistent with our visual analysis, countries with lower freedom house scores and GDP per capitas see higher numbers of immigrants to the US.
+
+Refugees
+==========================
+
+Column {data-width=950}
+-----------------------------------------------------------------------
+#### How many refugees have been admitted to the United States?
+
+```{r}
+renderPlot({
+full_data %>%
+  ggplot(aes(x = as.numeric(year), y = annual_admitted_refugees_total)) +
+  geom_point() +
+  geom_smooth(aes(color = president), method = "lm", se = FALSE) +
+  theme_minimal() +
+  labs(title = "Total Admitted Refugees",
+       subtitle = "To the United States",
+       x = "Year",
+       y = "Number of Total Admitted Refugees") +
+  theme(plot.title = element_text(family = "Times"),
+  axis.title.y = element_text(family = "Times"),
+  axis.title.x = element_text(family = "Times"),
+  plot.subtitle = element_text(family = "Times")) + 
+    scale_y_continuous(labels = scales::comma)
+})
+```
+Unlike the immigrant numbers, the number of refugees steadily increased before dropping significantly in 2016, at the start of the Trump administration.
+
+
+#### How many refugees can be admitted?
+
+```{r}
+renderPlot({
+  full_data %>%
+  ggplot(aes(x = year, y = annual_refugee_ceiling)) +
+  geom_point() +
+  geom_smooth(aes(color = president), method = "lm", se = FALSE) +
+  theme_minimal() +
+  labs(title = "Annual Refugee Ceiling",
+       x = "Year",
+       y = "Number of Refugees Permitted") +
+  theme(plot.title = element_text(family = "Times"),
+  axis.title.y = element_text(family = "Times"),
+  axis.title.x = element_text(family = "Times"),
+  plot.subtitle = element_text(family = "Times")) + 
+    scale_y_continuous(labels = scales::comma)
+})
+```
+Adding explanation to overall refugee numbers, less refugees have come to the United States since the start of the Trump Administration because the Trump administration oversaw policies that a significantly lowered the amount of refugees that could be admitted.
+
+
+#### What percent of its refugee ceiling(s) is the United States admitting?
+
+```{r}
+renderPlot({
+  full_data %>%
+  mutate(percent_admitted = annual_admitted_refugees_total/annual_refugee_ceiling) %>%
+  ggplot(aes(x = year, y = percent_admitted)) +
+  geom_point() +
+  geom_smooth(aes(color = president), method = "lm", se = FALSE) +
+  theme_minimal() +
+  labs(title = "Percent of Refugees Admitted", 
+       subtitle = "According to Each Year's Ceiling",
+       x = "Year",
+       y = "Percent Admitted") +
+  theme(plot.title = element_text(family = "Times"),
+  axis.title.y = element_text(family = "Times"),
+  axis.title.x = element_text(family = "Times"),
+  plot.subtitle = element_text(family = "Times"))
+  })
+```
+The Obama administration consistently reached 100% or near 100% of its refugee ceiling each year save for 2012. Despite its lower ceilings, the Trump Administration still fulfilled 100% of its ceiling in 2019 and even exceeded its ceiling in 2017. 2018, however, saw only 50% of its already low ceiling fulfilled.
+
+#### Where are refugees coming from?
+
+```{r } 
+inputPanel(
+  selectInput("overlay2", label = "Map Overlay",
+              choices = c("Newly Arrived Refugees" = "total_refugees_by_country",
+                          "Freedom House" = "freedom_total",
+                          "GDP per capita" = "gdp_per_capita_2017"),
+              selected = "Newly Arrived Refugees"
+),
+ selectInput("year_filter3", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012)
+)
+
+renderPlotly({
+  
+map1data <- mapdata %>%
+  filter(year == input$year_filter3,
+         country_of_origin != "United States")
+
+if(input$overlay2 == "total_refugees_by_country") {
+map1data %>%
+    plot_ly(type = 'choropleth', locations = map1data$CODE, z = map1data$total_refugees_by_country,
+        text = ~hover, colorscale = "Viridis", reversescale = T) %>%
+  colorbar(title = "Number of Refugees") %>%
+  layout(
+    title = 'Refugees Country of Origin'
+  )
+} else if(input$overlay2 == "freedom_total") {
+map1data %>%
+    plot_ly(type = 'choropleth', locations = map1data$CODE, z = map1data$freedom_total,
+        text = ~hover, colorscale = "Viridis", reversescale = T) %>%
+  colorbar(title = "Freedom House Score by Country") %>%
+  layout(
+    title = 'Freedom House Score')
+} else if(input$overlay2 == "gdp_per_capita_2017") {
+map1data %>%
+    plot_ly(type = 'choropleth', locations = map1data$CODE, z = map1data$gdp_per_capita_2017,
+        text = ~hover, colorscale = "Viridis", reversescale = T) %>%
+  colorbar(title = "GDP per capita by Country,") %>%
+  layout(
+    title = '2017 GDP per capita')
+}
+})
+```
+Unlike immigrants, who come from nearly every country, refugees come from a smaller sampling of world countries. Still, similar patterns emerge as most refugee countries of origin visually correlate with the least free and poorest regions of the world.
+
+
+#### Top Countries of Origin for Refugees
+
+```{r}
+inputPanel(
+ selectInput("year_filter4", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012)
+)
+
+renderPlot({
+full_data %>%
+  dplyr::filter(year == input$year_filter4) %>%
+  arrange(desc(total_refugees_by_country)) %>%
+  slice_head(n = 5)%>%
+  ggplot()+
+  geom_bar(mapping = aes(x = fct_reorder(country_of_origin,total_refugees_by_country), y = total_refugees_by_country), stat = "identity", fill = "mediumpurple1")+
+  labs(title = "Top 5 Countries of Origin for Refugees", x = "Country of origin", y = "Total refugees by country")+
+    theme_minimal() +
+    theme(plot.title = element_text(family = "Times"),
+          axis.title.y = element_text(family = "Times"),
+          axis.title.x = element_text(family = "Times"),
+          plot.subtitle = element_text(family = "Times"))  + 
+    scale_y_continuous(labels = scales::comma)
+})
+
+```
+Unlike immigrant countries of origin, which remain consistent through the year, the most popular countries of origin for refugees tend to fluctuate. Some, however, like Burma, Iraq, and Somalia, see high numbers of refugees nearly every year.
+
+#### What kind of countries are refugees coming form?
+
+```{r}
+inputPanel(
+  selectInput("imm_kind_year2", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012),
+  selectInput("freedom_gdp2", label = "Freedom House vs. GDP per capita",
+             choices = c("Freedom House" = "freedom_total",
+                         "GDP per capita" = "gdp_per_capita_2017"),
+             selected =  "Freedom House")
+)
+
+renderPlot({
+  
+if(input$freedom_gdp2 == "freedom_total")
+    full_data %>%
+  filter(year == input$imm_kind_year2,
+         total_refugees_by_country < 2000) %>%
+  ggplot(aes(x = freedom_total, y = total_refugees_by_country)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+    theme_minimal() +
+    labs(title = "Newly Arrived Refugees by Country Freedom House Score",
+         subtitle = "Outliers Removed",
+       x = "Freedom House Score",
+       y = "Newly Arrived Refugees") +
+    theme(plot.title = element_text(family = "Times"),
+          axis.title.y = element_text(family = "Times"),
+          axis.title.x = element_text(family = "Times"),
+          plot.subtitle = element_text(family = "Times")) + 
+    scale_y_continuous(labels = scales::comma)
+  
+else if (input$freedom_gdp2 == "gdp_per_capita_2017")
+    full_data %>%
+  filter(year == input$imm_kind_year2,
+         total_refugees_by_country < 2000,
+         gdp_per_capita_2017 < 40000) %>%
+  ggplot(aes(x = gdp_per_capita_2017, y = total_refugees_by_country)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_minimal() +
+    labs(title = "Newly Arrived Refugees by Country GDP per capita",
+         subtitle = "Outliers Removed",
+       x = "GDP per capita",
+       y = "Newly Arrived Refugees") +
+    theme(plot.title = element_text(family = "Times"),
+          axis.title.y = element_text(family = "Times"),
+          axis.title.x = element_text(family = "Times"),
+          plot.subtitle = element_text(family = "Times"))  + 
+    scale_y_continuous(labels = scales::comma)
+  
+})
+```
+Interestingly, the number of refugees from a given country correlates strongly with one's freedom house score yet sees a less consistent correlation with gdp per capita. This hints that refugees are more motivated to leave their home due to a lack of humans rights as opposed to economic incentives. Immigrants, however, seem equally motivated by both.
+
+#### Religion
+
+```{r}
+inputPanel(
+ selectInput("year_filter5", label = "Year",
+             choices = c(2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019),
+             selected =  2012)
+)
+
+renderPlot({
+(full_data %>%
+  dplyr::filter(year == input$year_filter5))[, 10:16] %>%
+  summarise(Christianity = sum(Christianity, na.rm = TRUE),
+            Islam = sum(Islam, na.rm = TRUE),
+            `Non-Aﬃliated` = sum(`Non-Aﬃliated`,   na.rm = TRUE),
+            Other = sum(Other, na.rm = TRUE),
+            Judaism = sum(Judaism, na.rm = TRUE),
+            Buddhism  = sum(Buddhism , na.rm = TRUE)
+           ) %>%
+  pivot_longer(1:5, names_to = "Religion", values_to = "Number_of_Refugees") %>%
+  ggplot()+ 
+  geom_col(mapping = aes(x = fct_reorder(Religion, Number_of_Refugees), y = Number_of_Refugees), stat = "identity", fill = "coral1")+
+    labs(title = "Top Refugee Religious Affiliations", x = "Religion", y = "Number of Refugees")+ 
+  theme_minimal() +
+    theme(plot.title = element_text(family = "Times"),
+          axis.title.y = element_text(family = "Times"),
+          axis.title.x = element_text(family = "Times"),
+          plot.subtitle = element_text(family = "Times")) + 
+    scale_y_continuous(labels = scales::comma)
+})
+```
+In 2012, the vast majority of refugees were Christian. 2013, however saw a huge leap in Muslim refugees, which is also correlated with the influx of Iraqi refugees from that same year. Muslims were the majority of refugees to the US from 2014-2017, yet 2018 and 2019 saw sharp declines in the number of Muslim refugees relative to Christians, correlating with a simultaneous increase in Ukrainian refugees and a decrease in Iraqi, Syrian, and Somali refugees.
